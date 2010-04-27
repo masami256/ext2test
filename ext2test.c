@@ -92,6 +92,11 @@ static u_int16_t read_dentry_rec_len(unsigned long address, unsigned long offset
 	return len;
 }
 
+static struct binary_tree *add_binary_tree(struct binary_tree *btree, struct ext2_dentry *dentry)
+{
+	return NULL;
+}
+
 static int get_all_directories(struct binary_tree *btree, unsigned long address, u_int16_t count)
 {
 	int i;
@@ -110,15 +115,10 @@ static int get_all_directories(struct binary_tree *btree, unsigned long address,
 
 		read_dentry(dentry, address, offset, rec_len, name_len);
 
-		if (strcmp(dentry->name, "lost+found")) {
-			printf("name[%d] = [%s]\n", i, dentry->name);
-		} else {
-			free(dentry->name);
-			free(dentry);
-			i--; // ignore lost+found, so decrement it to count correctly.
-		}
+		printf("inode[%u]= [%s]\n", dentry->inode, dentry->name);
 
-		// even though, ignore lost+found, it needs to add rec_len to offset.
+		btree = add_binary_tree(btree, dentry);
+
 		offset += rec_len;
 	}
 
@@ -209,7 +209,9 @@ int main(int argc, char **argv)
 	btree = malloc(sizeof(*btree) * (block_cnt + 1));
 	assert(btree != NULL);
 	memset(btree, 0x0, sizeof(*btree));
-
+	btree->right = btree->left = NULL;
+	btree->dentry.name[0] = '/';
+ 
 	// Read first block group descriptor.
 	read_block_group(&sb, block_group, SUPER_BLOCK_SIZE * 2);
 
@@ -228,7 +230,7 @@ int main(int argc, char **argv)
 				printf("Free inodes 0x%x\n",  block_group[i].bg_free_inodes_count);
 				
 				// Get directory entries.
-				if (get_all_directories(btree + i, get_block_data_address(&sb, block_group, i), block_group[i].bg_used_dirs_count) < 0)
+				if (get_all_directories(btree + i, get_block_data_address(&sb, block_group, i), block_group[i].bg_used_dirs_count + 2) < 0)
 					exit(-1);
 
 				// Copy of super block which exists block group zero, one and so on.
