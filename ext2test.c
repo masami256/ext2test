@@ -210,7 +210,6 @@ int main(int argc, char **argv)
 	assert(btree != NULL);
 	memset(btree, 0x0, sizeof(*btree));
 	btree->right = btree->left = NULL;
-	btree->dentry.name[0] = '/';
  
 	// Read first block group descriptor.
 	read_block_group(&sb, block_group, SUPER_BLOCK_SIZE * 2);
