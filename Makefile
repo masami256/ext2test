@@ -13,4 +13,4 @@ target:$(objs)
 	$(CC) $(CFLAGS) -c $<
 
 clean:
-	rm -fr *.o *~ $(target)
+	rm -fr *.o *~ $(target) core

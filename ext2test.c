@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <string.h>
-
+#include <stdlib.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -91,10 +91,8 @@ int main(int argc, char **argv)
 	unsigned long size = 0;
 	int block_cnt = 0;
 	struct ext2_superblock sb;
-	struct ext2_blockgroup block_group[32];
-	int i, j;
-	
-	memset(block_group, 0x0, sizeof(block_group));
+	struct ext2_blockgroup *block_group;
+	int i;
 	
 	size = get_file_size();
 
@@ -119,7 +117,11 @@ int main(int argc, char **argv)
 	printf("Block per group 0x%x\n", sb.s_blocks_per_group);
 	printf("Inode per group 0x%x\n", sb.s_inodes_per_group);
 	
-	block_cnt = sb.s_blocks_count / 8192;
+	block_cnt = sb.s_blocks_count / sb.s_blocks_per_group;
+
+	block_group = malloc(sizeof(*block_group) * (block_cnt + 1));
+	assert(block_group != NULL);
+	memset(block_group, 0x0, sizeof(*block_group));
 
 	read_block_group(&sb, block_group, SUPER_BLOCK_SIZE * 2);
 
@@ -136,7 +138,12 @@ int main(int argc, char **argv)
 				printf("Block Data starts 0x%lx\n", get_block_data_address(&sb, block_group, i));
 				printf("Free blocks 0x%x\n",  block_group[i].bg_free_blocks_count);
 				printf("Free inodes 0x%x\n",  block_group[i].bg_free_inodes_count);
-				printf("Next is 0x%lx\n", (sb.s_blocks_per_group * 0x400) + (0x400 * ((i + 1) * 2)));
+
+				// Copy of super block which exists block group zero, one and so on.
+				if (i == 0) {
+					printf("Next is 0x%x\n", (sb.s_blocks_per_group * 0x400) + (0x400 * ((i + 1) * 2)));
+					read_block_group(&sb, &block_group[i + 1], (sb.s_blocks_per_group * 0x400) + 0x800);
+				}
 		}
 	
 	}
