@@ -11,8 +11,15 @@
 #include "ext2fs.h"
 #include "ext2_blockgroup.h"
 #include "ext2_inode.h"
+#include "ext2_dentry.h"
 
-static const char const test_file[] = "./hda.img";
+struct binary_tree {
+	struct ext2_dentry dentry;
+	struct binary_tree *right;
+	struct binary_tree *left;
+};
+
+static const char const *test_file = "./hda.img";
 static unsigned char *file_system;
 
 static unsigned long get_file_size(void);
@@ -22,6 +29,9 @@ static void read_block_group(struct ext2_superblock *sb,  struct ext2_blockgroup
 static void read_super_block(struct ext2_superblock *sb);
 static u_int32_t blockid2address(struct ext2_superblock *sb, u_int32_t id);
 static unsigned long get_block_data_address(struct ext2_superblock *sb, struct ext2_blockgroup *bg, int block_nr);
+static int get_all_directories(struct binary_tree *btree, unsigned long address, u_int16_t count);
+static u_int16_t read_dentry_rec_len(unsigned long address, unsigned long offset);
+static u_int8_t read_dentry_name_len(unsigned long address, unsigned long offset);
 
 static unsigned long get_file_size(void)
 {
@@ -46,6 +56,73 @@ static void *map2memory(unsigned long size)
 	close(fd);
 
 	return ret;
+}
+
+static int read_dentry(struct ext2_dentry *dentry, unsigned address, 
+			unsigned long offset, u_int16_t rec_len, u_int8_t name_len)
+{
+	dentry->name = malloc(name_len + 1);
+	assert(dentry->name != NULL);
+
+	memset(dentry->name, 0x0, name_len + 1);
+
+	memcpy(dentry, file_system + address + offset, 8);
+	strncpy(dentry->name, (char *) file_system + address + offset + 8, name_len);
+
+	return 0;
+}
+
+static u_int8_t read_dentry_name_len(unsigned long address, unsigned long offset)
+{
+	u_int8_t len = 0;
+
+	// ignore inode + rec_len.
+	memcpy(&len, file_system + address + offset + 6, sizeof(len));
+
+	return len;
+}
+
+static u_int16_t read_dentry_rec_len(unsigned long address, unsigned long offset)
+{
+	u_int16_t len = 0;
+
+	// ignore inode.
+	memcpy(&len, file_system + address + offset + 4, sizeof(len));
+
+	return len;
+}
+
+static int get_all_directories(struct binary_tree *btree, unsigned long address, u_int16_t count)
+{
+	int i;
+	u_int16_t rec_len;
+	u_int8_t name_len;
+	unsigned long offset = 0;
+
+	for (i = 0; i < count; i++) {
+		struct ext2_dentry *dentry;
+		
+		dentry = malloc(sizeof(*dentry));
+		assert(dentry != NULL);
+
+		rec_len = read_dentry_rec_len(address, offset);
+		name_len = read_dentry_name_len(address, offset);
+
+		read_dentry(dentry, address, offset, rec_len, name_len);
+
+		if (strcmp(dentry->name, "lost+found")) {
+			printf("name[%d] = [%s]\n", i, dentry->name);
+		} else {
+			free(dentry->name);
+			free(dentry);
+			i--; // ignore lost+found, so decrement it to count correctly.
+		}
+
+		// even though, ignore lost+found, it needs to add rec_len to offset.
+		offset += rec_len;
+	}
+
+	return 0;
 }
 
 static unsigned long get_block_data_address(struct ext2_superblock *sb, struct ext2_blockgroup *bg, int block_nr)
@@ -92,37 +169,48 @@ int main(int argc, char **argv)
 	int block_cnt = 0;
 	struct ext2_superblock sb;
 	struct ext2_blockgroup *block_group;
+	struct binary_tree *btree;
 	int i;
-	
+
+	// Get HDD image file size and mmap the image.
 	size = get_file_size();
+	file_system = map2memory(size);
 
 	printf("file size is %ld\n", size);
 
-	file_system = map2memory(size);
-
+	// Read super block which in block group zero.
 	read_super_block(&sb);
 
+	// print some information.
 	printf("The file system was created by %s\n", get_os_name(&sb));
-	printf("inodes count %u : block count %u\n", sb.s_inodes_count, sb.s_blocks_count);
-	printf("reserved block count %u\n", sb.s_r_blocks_count);
-	printf("free block count %u\n", sb.s_free_blocks_count);
-	printf("free inode count %u\n", sb.s_free_inodes_count);
-	printf("first block %u\n", sb.s_first_data_block);
+	printf("Inodes count %u : Block count %u\n", sb.s_inodes_count, sb.s_blocks_count);
+	printf("Reserved block count %u\n", sb.s_r_blocks_count);
+	printf("Free block count %u\n", sb.s_free_blocks_count);
+	printf("Rree inode count %u\n", sb.s_free_inodes_count);
+	printf("First block %u\n", sb.s_first_data_block);
 	printf("Block size %u\n", get_block_size(sb));
 	printf("Block group nr is %d\n", sb.s_block_group_nr);
 	printf("Fragment size %u\n", get_fragment_size(sb));
-	printf("first data block is 0x%x\n", sb.s_first_data_block);
-	printf("first inode %u\n", sb.s_first_ino);
-	printf("inode size %u\n", sb.s_inode_size);
+	printf("First data block is 0x%x\n", sb.s_first_data_block);
+	printf("First inode %u\n", sb.s_first_ino);
+	printf("Inode size %u\n", sb.s_inode_size);
 	printf("Block per group 0x%x\n", sb.s_blocks_per_group);
 	printf("Inode per group 0x%x\n", sb.s_inodes_per_group);
 	
+	// how many block groups do I have?
 	block_cnt = sb.s_blocks_count / sb.s_blocks_per_group;
 
+	// Allocate memory to store block group data.
 	block_group = malloc(sizeof(*block_group) * (block_cnt + 1));
 	assert(block_group != NULL);
 	memset(block_group, 0x0, sizeof(*block_group));
 
+	// Setup binary tree to store dentries.
+	btree = malloc(sizeof(*btree) * (block_cnt + 1));
+	assert(btree != NULL);
+	memset(btree, 0x0, sizeof(*btree));
+
+	// Read first block group descriptor.
 	read_block_group(&sb, block_group, SUPER_BLOCK_SIZE * 2);
 
 	for (i = 0; i < block_cnt + 1; i++) {
@@ -138,6 +226,10 @@ int main(int argc, char **argv)
 				printf("Block Data starts 0x%lx\n", get_block_data_address(&sb, block_group, i));
 				printf("Free blocks 0x%x\n",  block_group[i].bg_free_blocks_count);
 				printf("Free inodes 0x%x\n",  block_group[i].bg_free_inodes_count);
+				
+				// Get directory entries.
+				if (get_all_directories(btree + i, get_block_data_address(&sb, block_group, i), block_group[i].bg_used_dirs_count) < 0)
+					exit(-1);
 
 				// Copy of super block which exists block group zero, one and so on.
 				if (i == 0) {
@@ -148,8 +240,8 @@ int main(int argc, char **argv)
 	
 	}
 
-		
 	munmap(file_system, size);
+	free(block_group);
 
 	return 0;
 }
