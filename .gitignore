@@ -1,0 +1,4 @@
+*.o
+ext2test
+*~
+core
