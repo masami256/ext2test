@@ -31,7 +31,9 @@ static u_int32_t blockid2address(struct ext2_superblock *sb, u_int32_t id);
 static unsigned long get_block_data_address(struct ext2_superblock *sb, struct ext2_blockgroup *bg, int block_nr);
 static int get_all_directories(struct binary_tree *btree, unsigned long address, u_int16_t count);
 static u_int16_t read_dentry_rec_len(unsigned long address, unsigned long offset);
-static u_int8_t read_dentry_name_len(unsigned long address, unsigned long offset);
+static void read_dentry(struct ext2_dentry *dentry, unsigned address, 
+			unsigned long offset, u_int16_t rec_len);
+
 
 static unsigned long get_file_size(void)
 {
@@ -58,28 +60,10 @@ static void *map2memory(unsigned long size)
 	return ret;
 }
 
-static int read_dentry(struct ext2_dentry *dentry, unsigned address, 
-			unsigned long offset, u_int16_t rec_len, u_int8_t name_len)
+static void read_dentry(struct ext2_dentry *dentry, unsigned address, 
+			unsigned long offset, u_int16_t rec_len)
 {
-	dentry->name = malloc(name_len + 1);
-	assert(dentry->name != NULL);
-
-	memset(dentry->name, 0x0, name_len + 1);
-
-	memcpy(dentry, file_system + address + offset, 8);
-	strncpy(dentry->name, (char *) file_system + address + offset + 8, name_len);
-
-	return 0;
-}
-
-static u_int8_t read_dentry_name_len(unsigned long address, unsigned long offset)
-{
-	u_int8_t len = 0;
-
-	// ignore inode + rec_len.
-	memcpy(&len, file_system + address + offset + 6, sizeof(len));
-
-	return len;
+	memcpy(dentry, file_system + address + offset, rec_len);
 }
 
 static u_int16_t read_dentry_rec_len(unsigned long address, unsigned long offset)
@@ -101,19 +85,19 @@ static int get_all_directories(struct binary_tree *btree, unsigned long address,
 {
 	int i;
 	u_int16_t rec_len;
-	u_int8_t name_len;
 	unsigned long offset = 0;
 
 	for (i = 0; i < count; i++) {
 		struct ext2_dentry *dentry;
 		
-		dentry = malloc(sizeof(*dentry));
-		assert(dentry != NULL);
 
 		rec_len = read_dentry_rec_len(address, offset);
-		name_len = read_dentry_name_len(address, offset);
 
-		read_dentry(dentry, address, offset, rec_len, name_len);
+		// added one byte for '\0'.
+		dentry = malloc(rec_len + 1);
+		assert(dentry != NULL);
+
+		read_dentry(dentry, address, offset, rec_len);
 
 		printf("inode[%u]= [%s]\n", dentry->inode, dentry->name);
 
