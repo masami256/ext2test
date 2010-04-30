@@ -1,0 +1,8 @@
+.
+./lost+found
+./dir_a
+./dir_a/dir_b
+./dir_a/dir_b/foobar.txt
+./dir_A
+./dir_A/dir_B
+./test.txt
