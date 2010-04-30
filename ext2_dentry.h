@@ -40,4 +40,9 @@ struct ext2_indexed_entry_count_and_limit {
 	u_int16_t count;
 };
 
+struct dentry_list {
+	struct ext2_dentry *dentry;
+	struct dentry_list *next;
+};
+
 #endif // __MIKOOS_EXT2_DENTRY_H 
