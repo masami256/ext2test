@@ -23,6 +23,7 @@ static void print_superblock(const struct minix_superblock *sb);
 static void read_dentry(struct minix_dentry *dentry, unsigned long address, unsigned long offset);
 static void read_inode(u_int16_t inode_num, struct minix_inode *inode, unsigned long addr);
 static void directory_walk(struct minix_superblock *sb, unsigned long address);
+static void find_file_test(struct minix_superblock *sb);
 
 #define get_first_data_zone(sb) (sb).s_firstdatazone * 0x400
 #define get_inode_table_address(sb) 0x800 + ((sb).s_imap_blocks * 0x400) + ((sb).s_zmap_blocks * 0x400)
@@ -169,13 +170,19 @@ static u_int16_t find_file(struct minix_superblock *sb, unsigned long address, c
 		ftype = get_file_type(&inode); 
 		if (ftype == I_FT_DIR) {
 			len = count_delimita_length(tmp, '/');
-			if (!strncmp(tmp, dentry.name, len)) 
+			if (len == -1) {
+				if (!strcmp(tmp, dentry.name))
+					return dentry.inode;
+			} else if (!strncmp(tmp, dentry.name, len)) {
 				ret = find_file(sb, get_data_zone(inode.i_zone[0]), tmp + len);
-		} else if (ftype == I_FT_REGULAR) {
-			if (!strcmp(dentry.name, tmp)) {
-				printf("Found [0x%x:%s]\n", dentry.inode, dentry.name);
-				return dentry.inode;
+			} else {
+				// if final character is '/', finish searching.
+				if (!strcmp(tmp + len, "/"))
+					return dentry.inode;
 			}
+		} else if (ftype == I_FT_REGULAR) {
+			if (!strcmp(dentry.name, tmp))
+				return dentry.inode;
 		}
 		if (ret)
 			return ret;
@@ -204,14 +211,34 @@ int main(int argc, char **argv)
 
 	directory_walk(&sb, get_first_data_zone(sb));
 
-	find_file(&sb, get_first_data_zone(sb), "/dir_a/dir_b/foobar.txt");
-	find_file(&sb, get_first_data_zone(sb), "/dir_A/dir_B");
-	find_file(&sb, get_first_data_zone(sb), "/test.txt");
+	find_file_test(&sb);
 
 	munmap(file_system, size);
 
 	return 0;
 }
+
+static void find_file_test(struct minix_superblock *sb)
+{
+	u_int16_t ret;
+
+	ret = find_file(sb, get_first_data_zone(*sb), "/dir_a/dir_b/foobar.txt");
+	printf("file %s %s\n", "/dir_a/dir_b/foobar.txt", ret != 0 ? "Found" : "Not found");
+
+	ret = find_file(sb, get_first_data_zone(*sb), "/dir_A/dir_B");
+	printf("file %s %s\n", "/dir_A/dir_B", ret != 0 ? "Found" : "Not found");
+
+	ret = find_file(sb, get_first_data_zone(*sb), "/dir_A/dir_B/");
+	printf("file %s %s\n", "/dir_A/dir_B/", ret != 0 ? "Found" : "Not found");
+
+	ret = find_file(sb, get_first_data_zone(*sb), "/test.txt");
+	printf("file %s %s\n", "/test.txt", ret != 0 ? "Found" : "Not found");
+
+	ret = find_file(sb, get_first_data_zone(*sb), "/dir_A/dir_C");
+	printf("file %s %s\n", "/dir_A/dir_C", ret != 0 ? "Found" : "Not found");
+
+}
+
 
 static void print_superblock(const struct minix_superblock *sb)
 {
