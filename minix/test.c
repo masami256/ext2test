@@ -128,6 +128,65 @@ static void directory_walk(struct minix_superblock *sb, unsigned long address)
 	}
 }
 
+static int count_delimita_length(const char *str, char c)
+{
+	int i = 0;
+	int len = strlen(str);
+
+	for (i = 0; i < len; i++) {
+		if (str[i] == c)
+			return i;
+	}
+
+	return -1;
+	
+}
+
+static u_int16_t find_file(struct minix_superblock *sb, unsigned long address, const char *fname)
+{
+	unsigned long offset = 0;
+	struct minix_dentry dentry;
+	struct minix_inode inode;
+	unsigned long inode_tbl_bass = get_inode_table_address(*sb);
+	const char *tmp;
+	u_int16_t ret = 0;
+
+	int len = 0;
+	int ftype;
+	while (1) {
+		// read first entry.
+		read_dentry(&dentry, address, offset);
+
+		if (dentry.inode == 0)
+			break;
+
+		read_inode(dentry.inode, &inode, inode_tbl_bass);
+
+		tmp = fname;
+		if (tmp[0] == '/') 
+			tmp = tmp + 1;
+
+		ftype = get_file_type(&inode); 
+		if (ftype == I_FT_DIR) {
+			len = count_delimita_length(tmp, '/');
+			if (!strncmp(tmp, dentry.name, len)) 
+				ret = find_file(sb, get_data_zone(inode.i_zone[0]), tmp + len);
+		} else if (ftype == I_FT_REGULAR) {
+			if (!strcmp(dentry.name, tmp)) {
+				printf("Found [0x%x:%s]\n", dentry.inode, dentry.name);
+				return dentry.inode;
+			}
+		}
+		if (ret)
+			return ret;
+
+		offset += sizeof(dentry) - 1;
+	}
+
+	return 0;
+
+}
+
 int main(int argc, char **argv)
 {
 	struct minix_superblock sb;
@@ -145,7 +204,9 @@ int main(int argc, char **argv)
 
 	directory_walk(&sb, get_first_data_zone(sb));
 
-	printf("inode size is %ld\n", sizeof(struct minix_inode));
+	find_file(&sb, get_first_data_zone(sb), "/dir_a/dir_b/foobar.txt");
+	find_file(&sb, get_first_data_zone(sb), "/dir_A/dir_B");
+	find_file(&sb, get_first_data_zone(sb), "/test.txt");
 
 	munmap(file_system, size);
 
