@@ -27,7 +27,8 @@ static int get_all_directories(struct dentry_list *head, unsigned long address, 
 static u_int16_t read_dentry_rec_len(unsigned long address, unsigned long offset);
 static void read_dentry(struct ext2_dentry *dentry, unsigned address, 
 			unsigned long offset, u_int16_t rec_len);
-
+static void directory_walk(struct dentry_list *head);
+static u_int8_t get_file_type(struct ext2_dentry *dentry);
 
 static unsigned long get_file_size(void)
 {
@@ -52,6 +53,35 @@ static void *map2memory(unsigned long size)
 	close(fd);
 
 	return ret;
+}
+
+static u_int8_t get_file_type(struct ext2_dentry *dentry)
+{
+	return dentry->file_type;
+}
+
+static void directory_walk(struct dentry_list *head)
+{
+	struct dentry_list *p;
+	u_int8_t ftype;
+	
+	for (p = head->next; p; p = p->next) {
+		ftype = get_file_type(p->dentry);
+		switch (ftype) {
+		case EXT2_FT_UNKNOWN:
+			printf("unknown file type %s\n", p->dentry->name);
+			break;
+		case EXT2_FT_REG_FILE:
+			printf("%s is a regular file\n", p->dentry->name);
+			break;
+		case EXT2_FT_DIR:
+			printf("%s is a directory\n", p->dentry->name);
+			break;
+		default:
+			break;
+		}
+	}
+
 }
 
 static void read_dentry(struct ext2_dentry *dentry, unsigned address, 
@@ -215,6 +245,8 @@ int main(int argc, char **argv)
 		}
 	
 	}
+
+	directory_walk(&head);
 
 	for (p = head.next; p != NULL; p = q) {
 		printf("inode[%u]= [%s]\n", p->dentry->inode, p->dentry->name);
