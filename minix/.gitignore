@@ -1,0 +1,4 @@
+*.o
+minixtest
+*~
+core
